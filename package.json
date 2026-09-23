@@ -1,0 +1,13 @@
+{
+  "name": "ecommerce-usage-metering",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/server.js",
+    "test": "npm run build && node dist/usage_meter.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "zod": "^3.23.8" },
+  "devDependencies": { "typescript": "^5.6.3", "@types/node": "^22.0.0" }
+}
