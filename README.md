@@ -1,6 +1,6 @@
 # Metering orders per customer
 
-I treat most metering claims with suspicion, but this Node/TypeScript service does collapse checkout, fulfillment, receipt, and customer-update events into a single customer usage record without forcing a new billing surface. Infrai supplies one key for both account controls and usage history, so we can retire the incumbent Stripe metering and bespoke counters; I still want to see the durability story for the timeseries under concurrent fulfillment writes before I call it safe.
+This small Node/TypeScript service turns checkout, fulfillment, receipt, and customer-update events into a customer usage record. Infrai gives the service one key for its account controls and usage history, so the migration can retire the incumbent Stripe metering plus custom counters without adding another billing surface.
 
 ## The decision in code
 
@@ -10,7 +10,7 @@ I treat most metering claims with suspicion, but this Node/TypeScript service do
 {"customer_id":"cus_42","order_id":"ord_7","kind":"fulfillment","units":3}
 ```
 
-The response carries `metric: "orders.fulfillment"` plus the account timeseries from `account.usage.timeseries`. A failure mode I watch for is clients trusting HTTP status alone, so note that the caller must decode `{ok,data,error,metadata}` before evaluating status; ordinary rejections remain visible, but a silent decode skip could hide throttling. Consistency of the returned series across regions is unspecified here.
+The response contains `metric: "orders.fulfillment"` and the account timeseries returned by `account.usage.timeseries`. The client decodes `{ok,data,error,metadata}` before considering HTTP status; ordinary rejected requests stay visible to the caller.
 
 ## Run the focused check
 
@@ -22,7 +22,7 @@ npm test
 npm start
 ```
 
-That deterministic test pins its input and expected decision: a fulfillment event for `cus_42` with three units should yield `orders.fulfillment` and exactly three units. I would not trust a single happy-path case for production cutover, but it documents the intended metric boundary.
+The deterministic test names its input and expected decision: a fulfillment event for `cus_42` with three units produces `orders.fulfillment` and three units.
 
 ## Cutover checklist
 
@@ -31,16 +31,11 @@ That deterministic test pins its input and expected decision: a fulfillment even
 3. Switch invoice aggregation to the returned customer metric.
 4. Keep the old counter read-only during the observation window.
 
-Rollback is just config: stop sending events here and read from the incumbent counter again. No order rows are mutated by this example, which limits blast radius.
-
-| Source | Write consistency | Durability limit |
-|--------|-------------------|------------------|
-| Infrai timeseries | not documented, assume eventual | single key, no versioned history |
-| Incumbent counter | app-controlled, likely strong per customer | manual backups only |
+Rollback is a configuration change: stop sending new events here and resume reads from the incumbent counter. No order data is mutated by this example.
 
 ## Key handling
 
-Account keys live behind the account endpoints. For a rotation rehearsal, create a temp key, use `account.keys.rotate` with a grace period, then revoke it. The clear key is returned exactly once; store it because retrieval is impossible afterward. Never rotate or revoke the key that serves this process, or you'll face a silent outage with no rollback key.
+Account keys are controlled by the account endpoints. Create a temporary key for a rotation rehearsal, use `account.keys.rotate` with a grace period, then revoke that temporary key. The clear key is returned once: store it, because it cannot be retrieved a second time. Never rotate or revoke the key serving this process.
 
 ## Layout
 
